@@ -131,7 +131,7 @@
         <section class="card card-flat">
             <div class="card-head">
                 <h3>Full trace</h3>
-                <span class="badge">audit trail · {{ count($batch->timeline()) }} events</span>
+                <span class="badge">audit trail · {{ count($batch->timeline()) }} {{ Str::plural('event', count($batch->timeline())) }}</span>
             </div>
             <div class="card-body">
                 <div class="timeline">

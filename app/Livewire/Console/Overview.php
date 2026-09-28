@@ -24,6 +24,9 @@ class Overview extends Component
         $today = now()->startOfDay();
 
         $intakeToday = (float) WasteBatch::whereDate('received_at', $today)->sum('collected_kg');
+        // Counted over the same rows as the weight above it, so the tile cannot
+        // read "0 kg across 4 batches".
+        $receivedTodayCount = WasteBatch::whereDate('received_at', $today)->count();
         $processedToday = (float) WasteBatch::whereDate('processed_at', $today)->sum('verified_kg');
         $awaiting = WasteBatch::awaitingInspection();
         $awaitingKg = (float) $awaiting->clone()->sum(DB::raw('COALESCE(collected_kg, expected_kg, 0)'));
@@ -47,6 +50,7 @@ class Overview extends Component
 
         return view('livewire.console.overview', [
             'intakeToday'    => $intakeToday,
+            'receivedTodayCount' => $receivedTodayCount,
             'processedToday' => $processedToday,
             'awaitingCount'  => $awaiting->clone()->count(),
             'awaitingKg'     => $awaitingKg,

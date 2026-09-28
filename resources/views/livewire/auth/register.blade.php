@@ -182,7 +182,7 @@
                 </div>
 
                 @if ($locateMessage)
-                    <div class="callout callout-ok"><i data-icon="ok" class="i i-sm"></i><div>{{ $locateMessage }}</div></div>
+                    <div class="callout {{ $locateOutside ? 'callout-warn' : 'callout-ok' }}"><i data-icon="{{ $locateOutside ? 'alert' : 'ok' }}" class="i i-sm"></i><div>{{ $locateMessage }}</div></div>
                 @endif
 
                 @if ($pins)

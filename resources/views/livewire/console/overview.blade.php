@@ -37,7 +37,7 @@
             <div class="stat-top"><span class="stat-label">Received today</span>
                 <span class="stat-icon"><i data-icon="package" class="i i-sm"></i></span></div>
             <div class="stat-value figure-num">{{ number_format($intakeToday, 0) }}<small>kg</small></div>
-            <div class="stat-foot">across {{ $counts['RECEIVED'] ?? 0 }} batches at the gate</div>
+            <div class="stat-foot">across {{ $receivedTodayCount }} {{ Str::plural('batch', $receivedTodayCount) }} through the gate</div>
         </div>
         <div class="card stat tone-cyan">
             <div class="stat-top"><span class="stat-label">Processed today</span>

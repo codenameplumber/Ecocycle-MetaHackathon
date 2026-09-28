@@ -68,6 +68,12 @@ class RequestPickup extends Component
             return;
         }
 
+        if (! Geo::withinServiceArea($lat, $lng)) {
+            $this->dispatch('toast', message: 'That location is outside the service area — keeping your pickup point', kind: 'warn');
+
+            return;
+        }
+
         $this->lat = round($lat, 7);
         $this->lng = round($lng, 7);
         $this->accuracy = $accuracy ? round($accuracy) : null;

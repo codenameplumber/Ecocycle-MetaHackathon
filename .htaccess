@@ -1,0 +1,9 @@
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Send all requests to Laravel's public directory
+    RewriteRule ^(.*)$ public/$1 [L]
+</IfModule>
+
+# Disable directory listing
+Options -Indexes

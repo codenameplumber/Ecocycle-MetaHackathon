@@ -167,7 +167,8 @@
                 <div class="tiny dim">Biogas generated</div>
             </div>
             <div>
-                <div class="stat-value figure-num" style="font-size:20px">{{ number_format($co2eKg / 1000, 1) }}<small>t</small></div>
+                {{-- One household is kilograms, not tonnes: 29 kg would otherwise read "0.0 t". --}}
+                <div class="stat-value figure-num" style="font-size:20px">@if ($co2eKg >= 1000){{ number_format($co2eKg / 1000, 1) }}<small>t</small>@else{{ number_format($co2eKg, 0) }}<small>kg</small>@endif</div>
                 <div class="tiny dim">CO₂e avoided</div>
             </div>
         </div>

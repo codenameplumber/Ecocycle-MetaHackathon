@@ -25,6 +25,14 @@
     return { min: Math.max(0, min - span * 0.22), max: max + span * (padTop || 0.14) };
   }
   function uid(p) { uid.n = (uid.n || 0) + 1; return p + uid.n; }
+  function allZero(vals) { return vals.every(function (v) { return !v; }); }
+
+  /* Rounding every tick to a whole number repeats labels once the range is
+     small ("1, 1, 1, 0, 0"), so the decimals follow the step between ticks. */
+  function tickText(val, step) {
+    var d = step >= 1 ? 0 : step >= 0.1 ? 1 : 2;
+    return val.toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
+  }
 
   /* A fixed 640-unit viewBox on a width:100% <svg> means the whole drawing —
      bars, type, stroke weights — is scaled by however wide the container
@@ -94,12 +102,16 @@
 
     var iw = w - L - R, ih = h - T - B;
     var ticks = 4;
+    var step = (e.max - e.min) / ticks;
+    /* Nothing in either series: keep the baseline, drop the scale above it --
+       a scale drawn for no data reads as data. */
+    var empty = allZero(vals) && (!opts.compare || allZero(opts.compare));
     for (var t = 0; t <= ticks; t++) {
       var y = T + (t / ticks) * ih;
       svg.appendChild(ns('line', { x1: L, y1: y, x2: w - R, y2: y, class: 'grid-line' }));
       var val = e.max - (t / ticks) * (e.max - e.min);
       var lbl = ns('text', { x: L - 8, y: y + 3.5, 'text-anchor': 'end' });
-      lbl.textContent = opts.fmt ? opts.fmt(val) : Math.round(val).toLocaleString();
+      lbl.textContent = opts.fmt ? opts.fmt(val) : empty ? (t === ticks ? '0' : '') : tickText(val, step);
       svg.appendChild(lbl);
     }
 
@@ -156,7 +168,10 @@
     svg.classList.add('chart');
     var w = frame(svg, h);
     var iw = w - L - R, ih = h - T - B;
-    var max = Math.max.apply(null, vals) * 1.12;
+    /* An empty week still draws its baseline and stubs; dividing by a zero
+       peak would give every bar a NaN height instead. */
+    var empty = allZero(vals);
+    var max = (empty ? 1 : Math.max.apply(null, vals)) * 1.12;
     var gap = opts.gap == null ? 6 : opts.gap;
     /* Keep bars readable rather than letting six values become six slabs. */
     var bw = Math.min((iw / vals.length) - gap, opts.maxBarWidth || 64);
@@ -165,7 +180,8 @@
       var y = T + (t / 3) * ih;
       svg.appendChild(ns('line', { x1: L, y1: y, x2: w - R, y2: y, class: 'grid-line' }));
       var lb = ns('text', { x: L - 8, y: y + 3.5, 'text-anchor': 'end' });
-      lb.textContent = opts.fmt ? opts.fmt(max - (t / 3) * max) : Math.round(max - (t / 3) * max).toLocaleString();
+      var tv = max - (t / 3) * max;
+      lb.textContent = opts.fmt ? opts.fmt(tv) : empty ? (t === 3 ? '0' : '') : tickText(tv, max / 3);
       svg.appendChild(lb);
     }
 
@@ -259,7 +275,10 @@
     Array.prototype.forEach.call(nodes, function (svg) {
       var type = svg.getAttribute('data-chart');
       var vals = parseList(svg.getAttribute('data-values'));
-      var labels = (svg.getAttribute('data-labels') || '').split(',').filter(Boolean);
+      /* Blanks are kept: a label on every fourth bar is written '0h,,,,4h', and
+         dropping the empties would stack all six labels on the first six bars. */
+      var labels = (svg.getAttribute('data-labels') || '').split(',');
+      if (!labels.some(Boolean)) labels = [];
       var opts = {
         color: svg.getAttribute('data-color') || undefined,
         labels: labels.length ? labels : undefined,

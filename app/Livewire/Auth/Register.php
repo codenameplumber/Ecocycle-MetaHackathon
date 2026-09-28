@@ -57,6 +57,7 @@ class Register extends Component
     public ?float $lat = null;
     public ?float $lng = null;
     public ?string $locateMessage = null;
+    public bool $locateOutside = false;
 
     public ?string $createdCode = null;
 
@@ -108,6 +109,17 @@ class Register extends Component
     /** Coordinates pushed up from navigator.geolocation in the browser. */
     public function setCoords(float $lat, float $lng, ?float $accuracy = null): void
     {
+        // Out of area, the account falls back to the chosen area's centre, which
+        // is what createAccount() already does when no coordinates were captured.
+        if (! \App\Support\Geo::withinServiceArea($lat, $lng)) {
+            $this->lat = $this->lng = null;
+            $this->locateOutside = true;
+            $this->locateMessage = 'This device is outside the area we serve, so the centre of your chosen area will be used.';
+
+            return;
+        }
+
+        $this->locateOutside = false;
         $this->lat = round($lat, 7);
         $this->lng = round($lng, 7);
         $this->locateMessage = $accuracy

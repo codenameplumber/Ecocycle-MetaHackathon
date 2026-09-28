@@ -29,6 +29,14 @@ trait TracksAgentPosition
             return;
         }
 
+        if (! \App\Support\Geo::withinServiceArea($lat, $lng)) {
+            if ($announce) {
+                $this->dispatch('toast', message: 'That fix is outside the service area — keeping your last position', kind: 'warn');
+            }
+
+            return;
+        }
+
         $agent = auth()->user()?->agent;
 
         if (! $agent) {

@@ -39,6 +39,28 @@ final class Geo
         return self::project($lat, $lng) + ['kind' => $kind, 'live' => $live, 'label' => $label];
     }
 
+    /**
+     * Whether a device location is close enough to the facility to be used.
+     *
+     * The browser reports wherever the phone is. Opened at a venue in Abuja, or
+     * on a collector's handset with a bad fix, that is hundreds of kilometres
+     * from any pickup -- and once stored, every distance on the job board and
+     * every route is measured from it. Callers refuse a point outside the radius
+     * and keep the position they already had.
+     */
+    public static function withinServiceArea(float $lat, float $lng): bool
+    {
+        $facility = \App\Models\Facility::first();
+
+        $km = app(\App\Services\JobMatcher::class)->distanceKm(
+            $lat, $lng,
+            (float) ($facility?->lat ?? config('ecocycle.facility.lat')),
+            (float) ($facility?->lng ?? config('ecocycle.facility.lng')),
+        );
+
+        return $km <= (float) config('ecocycle.service_radius_km', 80);
+    }
+
     private static function clamp(float $v): float
     {
         return round(max(3, min(97, $v)), 2);
