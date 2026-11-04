@@ -8,7 +8,7 @@
     <div class="card-body" style="padding:14px">
         <div class="row-top g-12">
             <span class="thumb thumb-lg">
-                <img src="{{ asset('assets/img/cat-' . $j->category?->key . '.jpg') }}" alt="" loading="lazy">
+                <img src="{{ $j->photo_path ? asset('storage/' . $j->photo_path) : asset('assets/img/cat-' . $j->category?->key . '.jpg') }}" alt="" loading="lazy">
             </span>
             <div class="grow" style="min-width:0">
                 <div class="between" style="align-items:flex-start">
@@ -33,6 +33,12 @@
                         <span class="dim">est.</span>
                     </span>
                     <span class="small dim">{{ $j->category?->label }}</span>
+                    @if ($j->photo_path)
+                        <span class="badge badge-green">Photo evidence</span>
+                    @endif
+                    @if ($j->classification)
+                        <span class="tiny dim">{{ $j->classification['confidence'] ?? 0 }}% read</span>
+                    @endif
                     @if ($j->window_end)
                         <span class="row g-6 small dim">
                             <i data-icon="clock" class="i i-sm"></i>{{ $j->window_end->format('D g A') }}
@@ -56,7 +62,7 @@
                 </div>
                 {{-- On the jobs board accepting opens a confirmation; on the
                      Today screen there is no sheet, so it claims directly. --}}
-                <button class="btn btn-primary btn-sm"
+                <button class="btn btn-primary btn-sm" @disabled(! $fits)
                         wire:click="{{ ($confirmable ?? false) ? 'ask' : 'accept' }}({{ $j->id }})"
                         wire:loading.attr="disabled" wire:target="accept({{ $j->id }})">
                     <span wire:loading.remove wire:target="accept({{ $j->id }})">Accept</span>

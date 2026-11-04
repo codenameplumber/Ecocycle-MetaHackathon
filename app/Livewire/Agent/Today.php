@@ -5,12 +5,14 @@ namespace App\Livewire\Agent;
 use App\Enums\BatchStatus;
 use App\Services\JobMatcher;
 use Livewire\Attributes\Layout;
+use App\Livewire\Concerns\AcceptsJobs;
 use App\Livewire\Concerns\TracksAgentPosition;
 use Livewire\Component;
 
 #[Layout('layouts.phone')]
 class Today extends Component
 {
+    use AcceptsJobs;
     use TracksAgentPosition;
 
     /**
@@ -82,6 +84,8 @@ class Today extends Component
             'held'        => $agent->batches()->whereIn('status', ['COLLECTED', 'IN_TRANSIT'])->count(),
             'jobsToday'   => $agent->batches()->whereDate('accepted_at', today())->count(),
             'weekKg'      => $weekKg,
+            'capacity'    => $agent->capacityState(),
+            'lastHourKg'  => $agent->collectedLastHourKg(),
             'nearby'      => $matcher->rank($agent, 3),
         ])->layoutData([
             'app' => 'agent', 'page' => 'today',

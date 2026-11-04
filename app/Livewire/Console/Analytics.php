@@ -153,7 +153,7 @@ class Analytics extends Component
         ];
     }
 
-    public function render(OpenAiService $ai, ForecastService $forecast, InsightService $insights)
+    public function render(OpenAiService $ai, ForecastService $forecast, InsightService $insights, \App\Services\BehaviourForecastService $behaviour)
     {
         $days = collect(range(6, 0))->map(fn ($d) => now()->subDays($d));
         $intake = $days->map(fn ($d) => (float) WasteBatch::whereDate('received_at', $d)->sum('collected_kg'));
@@ -188,6 +188,9 @@ class Analytics extends Component
             'hours'      => $forecast->byHour(),
             'peakHours'  => $forecast->peakHours(),
             'insights'   => $insights->all(),
+            'briefing'   => $behaviour->briefing(),
+            'tomorrowByArea' => $behaviour->tomorrowByArea(),
+            'weekByCategory' => $behaviour->weekByCategory(),
             'areas'      => $areas,
             'modules'    => $this->modules($forecast, $ai),
             'labels'     => $days->map(fn ($d) => $d->format('D')),

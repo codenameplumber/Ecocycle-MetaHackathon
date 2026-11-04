@@ -1,5 +1,64 @@
 <div class="col g-16">
 
+    {{-- Snap first: photo + bags -> estimated range. No manual weighing. --}}
+    <section class="smart-card">
+        <div class="between mb-10">
+            <span class="ai-tag"><i data-icon="camera" class="i i-sm"></i> Smart estimate</span>
+            @if ($smart)
+                <span class="badge {{ $smart['confidence'] >= 65 ? 'badge-green' : 'badge-amber' }}">{{ $smart['label'] }} confidence · {{ $smart['confidence'] }}%</span>
+            @endif
+        </div>
+
+        <label class="snap-drop">
+            <input type="file" accept="image/*" capture="environment" wire:model="photo">
+            @if ($photo)
+                <img class="snap-preview" src="{{ $photo->temporaryUrl() }}" alt="Your waste, ready for collection">
+                <div class="small strong mt-10">Photo attached — agents see this evidence before travelling</div>
+            @else
+                <i data-icon="camera" class="i i-lg" style="color:var(--primary)"></i>
+                <div class="strong mt-8">Snap your waste</div>
+                <div class="tiny dim">Outside for the bags, inside for what is in them. No photo? Estimate from bags below.</div>
+            @endif
+        </label>
+        @error('photo') <span class="hint t-neg">{{ $message }}</span> @enderror
+        <div wire:loading wire:target="photo" class="callout mt-10"><i data-icon="refresh" class="i i-sm"></i><div>Reading your photo…</div></div>
+
+        @if ($classification && ! empty($classification['mix']))
+            <div class="mixbar mt-12">
+                @foreach ($classification['mix'] as $key => $pct)
+                    <span style="width:{{ $pct }}%;background:var(--c{{ (crc32($key) % 6) + 1 }})"></span>
+                @endforeach
+            </div>
+            <div class="row g-8 wrap mt-8">
+                @foreach ($classification['mix'] as $key => $pct)
+                    <span class="tiny dim">{{ ucfirst($key) }} {{ $pct }}%</span>
+                @endforeach
+            </div>
+        @endif
+
+        <div class="between mt-14">
+            <span>
+                <div class="tiny dim">How many full bags?</div>
+                <div class="bag-stepper mt-6">
+                    <button type="button" wire:click="setBags({{ $bags - 1 }})" aria-label="One fewer bag">−</button>
+                    <strong>{{ $bags }} bag{{ $bags === 1 ? '' : 's' }}</strong>
+                    <button type="button" wire:click="setBags({{ $bags + 1 }})" aria-label="One more bag">+</button>
+                </div>
+            </span>
+            @if ($smart)
+                <span class="right">
+                    <div class="tiny dim">Estimated weight</div>
+                    <div class="smart-figure">{{ number_format($smart['mid'], 1) }}<small> kg</small></div>
+                    <div class="smart-range">{{ number_format($smart['low'], 1) }}–{{ number_format($smart['high'], 1) }} kg range</div>
+                </span>
+            @endif
+        </div>
+
+        @if ($smart)
+            <p class="tiny dim mt-10">Based on {{ implode(' + ', $smart['basis']) }}. This fills the estimate below — payment still follows the facility scale.</p>
+        @endif
+    </section>
+
     {{-- Pickup point. Agents are sent to these coordinates, not to the written
          address, so it is worth showing the household exactly where the pin is
          -- and letting them correct it before an agent drives to the wrong one. --}}
@@ -63,7 +122,8 @@
         @endif
     </section>
 
-    {{-- Prediction prompt --}}
+    {{-- Superseded by the smart estimate above. --}}
+    @if (false)
     <div class="ai-card">
         <div class="between mb-8">
             <span class="ai-tag"><i data-icon="sparkles" class="i i-sm"></i> Suggested</span>
@@ -77,6 +137,8 @@
         </p>
     </div>
 
+    @endif
+
     {{-- Category --}}
     <section class="card">
         <div class="media media-21x9 media-flat media-scrim">
@@ -85,8 +147,36 @@
                 <div class="tiny">Separate what you can — clean streams are graded higher and pay more</div>
             </div>
         </div>
-        <div class="card-head"><h3>What are you disposing of?</h3></div>
+        <div class="card-head">
+            <h3>{{ $predicted ? 'Muse predicts this category' : 'What are you disposing of?' }}</h3>
+            @if ($predicted)<span class="badge badge-violet">{{ $predictedConfidence }}% sure</span>@endif
+        </div>
         <div class="card-body">
+            @if ($predicted)
+                <div class="ai-card mb-12">
+                    <div class="between mb-8">
+                        <span class="ai-tag"><i data-icon="sparkles" class="i i-sm"></i> Predicted category</span>
+                        <span class="tiny dim">{{ $predictionSource === 'photo' ? 'from your photo' : ($predictionSource === 'history' ? 'from your past pickups' : 'chosen by you') }}</span>
+                    </div>
+                    <div class="row g-8">
+                        <span style="width:10px;height:10px;border-radius:3px;background:{{ $predicted->color }}"></span>
+                        <span class="strong" style="font-size:17px;color:var(--text)">{{ $predicted->label }}</span>
+                        <span class="tiny dim">· ₦{{ (int) $predicted->rate_per_kg }} / kg</span>
+                    </div>
+                    <p class="tiny muted mt-8">
+                        @if ($predictionSource === 'photo')
+                            Read from the waste you snapped. Wrong? Tap the right one below - your tap always wins, and the facility inspector confirms at the gate.
+                        @elseif ($predictionSource === 'history')
+                            Based on what you usually dispose of. Snap a photo above for a read of this load, or tap below to change it.
+                        @else
+                            You picked this one. It overrides the prediction.
+                        @endif
+                    </p>
+                </div>
+                <div class="tiny dim mb-8">Correct Muse if this is wrong:</div>
+            @else
+                <div class="tiny dim mb-8">Pick the closest one - or snap a photo above and Muse predicts it for you.</div>
+            @endif
             <div class="opt-grid">
                 @foreach ($categories as $c)
                     <label class="opt">
@@ -105,7 +195,7 @@
     {{-- Volume --}}
     <section class="card">
         <div class="card-head">
-            <h3>Roughly how much?</h3>
+            <h3>Adjust the estimate</h3>
             <span class="badge">≈ {{ max(1, (int) round($kg / 5)) }} bags</span>
         </div>
         <div class="card-body">
@@ -173,8 +263,10 @@
         <div class="card-body">
             <dl>
                 <div class="kv"><dt>Category</dt>
-                    <dd>{{ $categories->firstWhere('id', $categoryId)?->label }}</dd></div>
+                    <dd>{{ $categories->firstWhere('id', $categoryId)?->label }}@if ($predictionSource === 'photo') <span class="badge badge-violet">Muse · photo</span>@elseif ($predictionSource === 'history') <span class="badge">Muse · history</span>@endif</dd></div>
                 <div class="kv"><dt>Estimated weight</dt><dd class="figure-num">{{ number_format($kg, 1) }} kg</dd></div>
+                @if ($smart)<div class="kv"><dt>Smart range</dt><dd class="figure-num">{{ number_format($smart['low'], 1) }}–{{ number_format($smart['high'], 1) }} kg · {{ $smart['confidence'] }}%</dd></div>@endif
+                <div class="kv"><dt>Evidence</dt><dd>{{ $photo ? 'Photo attached' : 'No photo — bag estimate' }}</dd></div>
                 <div class="kv"><dt>Rate</dt><dd class="figure-num">₦{{ number_format($this->estimate['rate'], 0) }} / kg</dd></div>
                 <div class="kv"><dt>Estimated batch value</dt><dd class="figure-num">₦{{ number_format($this->estimate['value'], 2) }}</dd></div>
                 <div class="kv"><dt><span class="strong">You receive (60%)</span></dt>

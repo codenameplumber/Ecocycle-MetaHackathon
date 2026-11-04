@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "points-backtester-demo",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8765", "--bind", "127.0.0.1", "--directory", "C:\\Users\\Dell\\AppData\\Local\\Temp\\claude\\C--Users-Dell-Desktop-Competitions-Ecocycle-Laravel\\d6d95826-25a2-4f1a-97ea-90d2bc373d29\\scratchpad\\points_demo"],
+      "port": 8765
+    }
+  ]
+}

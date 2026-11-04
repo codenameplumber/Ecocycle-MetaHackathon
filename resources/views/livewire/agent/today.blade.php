@@ -41,6 +41,10 @@
                         <span class="strong figure-num">{{ number_format($onBoard, 1) }} kg</span></div>
                     <div class="between small"><span class="muted">Remaining</span>
                         <span class="strong figure-num">{{ number_format($remaining, 1) }} kg</span></div>
+                    <div class="between small"><span class="muted">Last hour</span>
+                        <span class="strong figure-num">{{ number_format($lastHourKg, 1) }} kg collected</span></div>
+                    <div class="between small"><span class="muted">Committed</span>
+                        <span class="strong figure-num">{{ number_format($capacity['committed'], 1) }} kg · {{ $capacity['pct'] }}%</span></div>
                     <div class="between small"><span class="muted">Batches held</span>
                         <span class="strong figure-num">{{ $held }}</span></div>
                     <a class="btn btn-soft btn-sm mt-4" href="{{ route('agent.route') }}" wire:navigate>Head to facility</a>

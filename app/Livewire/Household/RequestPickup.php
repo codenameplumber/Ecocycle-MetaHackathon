@@ -3,27 +3,46 @@
 namespace App\Livewire\Household;
 
 use App\Enums\BatchStatus;
+use App\Models\Facility;
 use App\Models\WasteBatch;
 use App\Models\WasteCategory;
 use App\Services\BatchCodeGenerator;
 use App\Services\BatchStateMachine;
-use App\Services\QrService;
-use App\Services\SettlementService;
-use App\Models\Facility;
+use App\Services\LoadEstimatorService;
+use App\Services\OpenAiService;
 use App\Support\Geo;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
+use Livewire\WithFileUploads;
 
 /**
  * Creates a batch and puts it on the marketplace.
  *
- * The payout shown here is explicitly an estimate. The batch is created with an
- * expected_kg only -- collected_kg and verified_kg stay null until an agent and
- * then the facility scale fill them in.
+ * Photo-first: the household snaps the waste, the estimator returns a
+ * weight range from bag count, stream density and their own verified
+ * history, and that range fills expected_kg. collected_kg and verified_kg
+ * stay null until an agent and then the facility scale fill them in.
  */
 #[Layout('layouts.phone')]
 class RequestPickup extends Component
 {
+    use WithFileUploads;
+
+    public $photo;
+    public int $bags = 2;
+
+    /** @var array<string, mixed>|null */
+    public ?array $classification = null;
+
+    public bool $estimating = false;
+
+    /** Category Muse predicts the waste falls under, before the user confirms. */
+    public ?string $predictedCategoryKey = null;
+    public int $predictedConfidence = 0;
+
+    /** photo | history | manual — where the current category came from. */
+    public string $predictionSource = '';
+
     public ?int $categoryId = null;
     public float $kg = 10.0;
     public string $window = 'Morning';
@@ -31,6 +50,8 @@ class RequestPickup extends Component
     public string $note = '';
     public ?float $lat = null;
     public ?float $lng = null;
+    public ?float $accuracy = null;
+    public bool $located = false;
 
     /** The batch just created, if any — drives the confirmation sheet. */
     public ?int $createdId = null;
@@ -42,26 +63,141 @@ class RequestPickup extends Component
         $this->kg = $household->predictedKg();
         $this->lat = $household->lat;
         $this->lng = $household->lng;
+        $this->bags = max(1, (int) round($this->kg / 7));
+        $this->predictCategoryFromHistory();
     }
 
-    /** Metres of GPS error the browser reported for the pin, if it said. */
-    public ?float $accuracy = null;
+    /**
+     * Before any photo exists, predict from what this household usually
+     * disposes of. A household that mostly sends plastic probably is again.
+     */
+    public function predictCategoryFromHistory(): void
+    {
+        $household = auth()->user()->household;
 
-    /** True once the coordinates came from the device rather than the file. */
-    public bool $located = false;
+        if (! $household) {
+            return;
+        }
+
+        $total = $household->batches()->count();
+        if ($total < 3) {
+            return;
+        }
+
+        $top = $household->batches()
+            ->selectRaw('waste_category_id, COUNT(*) as n')
+            ->groupBy('waste_category_id')
+            ->orderByDesc('n')
+            ->first();
+
+        $category = $top ? WasteCategory::active()->find($top->waste_category_id) : null;
+        if (! $category) {
+            return;
+        }
+
+        $this->categoryId = $category->id;
+        $this->predictedCategoryKey = $category->key;
+        $this->predictedConfidence = (int) min(85, round($top->n / $total * 100));
+        $this->predictionSource = 'history';
+    }
 
     /**
-     * Coordinates pushed up from navigator.geolocation.
+     * Apply the category read from the snapped photo.
      *
-     * These become the batch's pickup_lat/pickup_lng, which is what JobMatcher
-     * measures every agent against — so this is the difference between a job
-     * ranked from where the waste actually is and one ranked from wherever the
-     * household happened to sign up.
+     * The photo prediction wins over history and over the default. The
+     * user's own tap still wins over both — updatedCategoryId() marks the
+     * source manual, and nothing re-applies a prediction after that.
      */
+    public function applyPredictedCategory(): bool
+    {
+        $key = $this->classification['suggested'] ?? null;
+        if (! $key) {
+            return false;
+        }
+
+        $category = WasteCategory::active()->where('key', $key)->first();
+        if (! $category) {
+            return false;
+        }
+
+        $this->predictedCategoryKey = $category->key;
+        $this->predictedConfidence = (int) ($this->classification['confidence'] ?? 0);
+        $this->predictionSource = 'photo';
+
+        // Only a real model read may move the user's selection. The
+        // no-key fallback suggests "mixed" for everything; applying that
+        // would silently re-label every load.
+        if (! empty($this->classification['generated'])) {
+            $this->categoryId = $category->id;
+        }
+
+        return true;
+    }
+
+    /** The category Muse currently predicts, for the screen to show. */
+    public function predictedCategory(): ?WasteCategory
+    {
+        return $this->predictedCategoryKey
+            ? WasteCategory::active()->where('key', $this->predictedCategoryKey)->first()
+            : null;
+    }
+
+    /** A snapped photo is read once, then the estimate follows it. */
+    public function updatedPhoto(): void
+    {
+        $this->validate(['photo' => 'image|max:8192']);
+        $this->estimating = true;
+        $this->classification = app(OpenAiService::class)->classifyPhoto($this->photo->getRealPath());
+        $this->estimating = false;
+        $this->applyPredictedCategory();
+        $this->applyEstimate();
+    }
+
+    public function updatedBags(): void
+    {
+        $this->applyEstimate();
+    }
+
+    public function updatedCategoryId(): void
+    {
+        // The user's tap always wins over a prediction.
+        $this->predictionSource = 'manual';
+        $this->predictedCategoryKey = WasteCategory::find($this->categoryId)?->key;
+        $this->predictedConfidence = 100;
+        $this->applyEstimate();
+    }
+
+    public function setBags(int $bags): void
+    {
+        $this->bags = max(1, min(20, $bags));
+        $this->applyEstimate();
+    }
+
+    /** Fill the expected weight from the smart estimate. */
+    public function applyEstimate(): void
+    {
+        $estimate = $this->smartEstimate();
+        if ($estimate) {
+            $this->kg = $estimate['mid'];
+        }
+    }
+
+    /** @return array{low: float, mid: float, high: float, confidence: int, label: string, basis: list<string>}|null */
+    public function smartEstimate(): ?array
+    {
+        $household = auth()->user()->household;
+        $category = WasteCategory::find($this->categoryId);
+
+        if (! $category) {
+            return null;
+        }
+
+        return app(LoadEstimatorService::class)
+            ->estimate($household, $category, $this->bags, $this->classification);
+    }
+
     public function setCoords(float $lat, float $lng, ?float $accuracy = null, bool $manual = true): void
     {
-        // Lagos is at roughly 6.5N, 3.4E, but the guard here is only against a
-        // malformed payload -- a household travelling is still a real pickup.
         if (abs($lat) > 90 || abs($lng) > 180) {
             $this->dispatch('toast', message: 'That location did not look right', kind: 'warn');
 
@@ -82,16 +218,13 @@ class RequestPickup extends Component
         $this->dispatch('toast', message: 'Pickup point set from your device', kind: 'ok');
     }
 
-    /** Fall back to the address the household registered with. */
     public function useRegisteredPoint(): void
     {
         $h = auth()->user()->household;
-
         $this->lat = $h->lat;
         $this->lng = $h->lng;
         $this->accuracy = null;
         $this->located = false;
-
         $this->dispatch('toast', message: 'Using your registered address', kind: 'ok');
     }
 
@@ -110,47 +243,44 @@ class RequestPickup extends Component
     {
         $this->validate([
             'categoryId' => 'required|exists:waste_categories,id',
-            'kg'         => 'required|numeric|min:1|max:200',
+            'kg' => 'required|numeric|min:1|max:200',
+            'photo' => 'nullable|image|max:8192',
         ]);
 
         $household = auth()->user()->household;
 
         $windowStart = match ($this->day) {
-            'today'    => now(),
+            'today' => now(),
             'tomorrow' => now()->addDay()->startOfDay(),
-            default    => now()->addDays(2)->startOfDay(),
+            default => now()->addDays(2)->startOfDay(),
         };
 
         $offset = match ($this->window) {
-            'Morning'   => [8, 12],
+            'Morning' => [8, 12],
             'Afternoon' => [12, 16],
-            'Evening'   => [16, 20],
-            default     => [8, 20],
+            'Evening' => [16, 20],
+            default => [8, 20],
         };
 
         $batch = WasteBatch::create([
-            'ulid'              => $codes->ulid(),
-            'code'              => $codes->batchCode(),
-            'household_id'      => $household->id,
+            'ulid' => $codes->ulid(),
+            'code' => $codes->batchCode(),
+            'household_id' => $household->id,
             'waste_category_id' => $this->categoryId,
-            'status'            => BatchStatus::Requested,
-            'expected_kg'       => $this->kg,
-            'pickup_lat'        => $this->lat ?? $household->lat,
-            'pickup_lng'        => $this->lng ?? $household->lng,
-            'note'              => $this->note ?: null,
-            'requested_at'      => now(),
-            'window_start'      => $windowStart->copy()->setHour($offset[0]),
-            'window_end'        => $windowStart->copy()->setHour($offset[1]),
+            'status' => BatchStatus::Requested,
+            'expected_kg' => $this->kg,
+            'photo_path' => $this->photo ? $this->photo->store('pickups', 'public') : null,
+            'classification' => $this->classification,
+            'pickup_lat' => $this->lat ?? $household->lat,
+            'pickup_lng' => $this->lng ?? $household->lng,
+            'note' => $this->note ?: null,
+            'requested_at' => now(),
+            'window_start' => $windowStart->copy()->setHour($offset[0]),
+            'window_end' => $windowStart->copy()->setHour($offset[1]),
         ]);
 
-        // Straight onto the marketplace so agents can see it.
         $machine->transition($batch, BatchStatus::Available, auth()->user());
-
-        // Stay on the screen and show the tag. The batch code is the one thing
-        // the household needs off this flow, and a redirect would take it away
-        // before they had a chance to read it.
         $this->createdId = $batch->id;
-
         $this->dispatch('toast', message: 'Pickup requested — nearby agents notified', kind: 'ok');
     }
 
@@ -164,8 +294,6 @@ class RequestPickup extends Component
         $household = auth()->user()->household;
         $facility = Facility::first();
 
-        // The point the agent will be sent to. `lat`/`lng` are whatever the
-        // browser's geolocation last reported; otherwise the registered address.
         $pins = [
             Geo::pin(
                 (float) ($this->lat ?? $household->lat),
@@ -181,11 +309,13 @@ class RequestPickup extends Component
 
         return view('livewire.household.request-pickup', [
             'categories' => WasteCategory::active()->get(),
-            'household'  => $household,
-            'pins'       => $pins,
+            'household' => $household,
+            'pins' => $pins,
+            'smart' => $this->smartEstimate(),
+            'predicted' => $this->predictedCategory(),
         ])->layoutData([
             'app' => 'household', 'page' => 'request',
-            'heading' => 'Request a pickup', 'sub' => 'Waste is ready for collection',
+            'heading' => 'Request a pickup', 'sub' => 'Snap it, we estimate it',
             'back' => route('app'),
         ]);
     }

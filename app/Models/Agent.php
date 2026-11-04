@@ -131,9 +131,48 @@ class Agent extends Model
             ->sum('collected_kg');
     }
 
+    /** Kilograms promised to accepted jobs not yet picked up. */
+    public function reservedKg(): float
+    {
+        return (float) $this->batches()->where('status', 'ACCEPTED')->sum('expected_kg');
+    }
+
+    /** Everything the vehicle is already committed to, physical or promised. */
+    public function committedKg(): float
+    {
+        return $this->loadOnBoardKg() + $this->reservedKg();
+    }
+
+    /** Whether one more batch of this size may be accepted. */
+    public function canAccept(float $expectedKg): bool
+    {
+        return $expectedKg <= $this->remainingCapacityKg();
+    }
+
+    /** Collected in the last sixty minutes. */
+    public function collectedLastHourKg(): float
+    {
+        return (float) $this->batches()->where('collected_at', '>=', now()->subHour())->sum('collected_kg');
+    }
+
+    /** @return array{pct: int, level: string, remaining: float, committed: float} */
+    public function capacityState(): array
+    {
+        $capacity = max(1.0, (float) $this->capacity_kg);
+        $committed = $this->committedKg();
+        $pct = (int) min(100, round($committed / $capacity * 100));
+
+        return [
+            'pct' => $pct,
+            'level' => $pct >= 100 ? 'full' : ($pct >= 80 ? 'warn' : 'ok'),
+            'remaining' => $this->remainingCapacityKg(),
+            'committed' => round($committed, 1),
+        ];
+    }
+
     public function remainingCapacityKg(): float
     {
-        return max(0, $this->capacity_kg - $this->loadOnBoardKg());
+        return max(0, (float) $this->capacity_kg - $this->committedKg());
     }
 
     /** Mean absolute variance between what this agent declares and the scale. */

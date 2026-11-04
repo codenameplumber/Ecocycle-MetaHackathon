@@ -20,6 +20,7 @@ class DatabaseSeeder extends Seeder
     {
         $this->call([
             EcoCycleSeeder::class,
+            VerifiedHistorySeeder::class,
             NetworkSeeder::class,
             ProcessingRunSeeder::class,
             PayoutAccountSeeder::class,

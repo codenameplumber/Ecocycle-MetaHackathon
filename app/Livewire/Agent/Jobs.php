@@ -2,9 +2,9 @@
 
 namespace App\Livewire\Agent;
 
+use App\Livewire\Concerns\AcceptsJobs;
 use App\Livewire\Concerns\TracksAgentPosition;
 use App\Models\WasteBatch;
-use App\Services\BatchStateMachine;
 use App\Services\JobMatcher;
 use App\Support\Geo;
 use Livewire\Attributes\Layout;
@@ -13,6 +13,7 @@ use Livewire\Component;
 #[Layout('layouts.phone')]
 class Jobs extends Component
 {
+    use AcceptsJobs;
     use TracksAgentPosition;
 
     /** Batch the agent has tapped Accept on but not yet confirmed. */
@@ -33,31 +34,6 @@ class Jobs extends Component
         return $this->confirmId
             ? WasteBatch::with(['household.user', 'household.area', 'category'])->find($this->confirmId)
             : null;
-    }
-
-    public function accept(int $batchId, BatchStateMachine $machine)
-    {
-        $this->confirmId = null;
-
-        $agent = auth()->user()->agent;
-        $batch = WasteBatch::find($batchId);
-
-        if (! $batch) {
-            return;
-        }
-
-        // The database decides who won, not the browser.
-        if (! $machine->claim($batch, $agent)) {
-            $this->dispatch('toast', message: 'Another agent took that one first', kind: 'warn');
-
-            return;
-        }
-
-        $batch->household?->user?->notify(new \App\Notifications\JobAccepted($batch->refresh()));
-
-        $this->dispatch('toast', message: 'Job accepted — it is on your route', kind: 'ok');
-
-        return $this->redirect(route('agent.pickup', $batch), navigate: true);
     }
 
     public function render(JobMatcher $matcher)
@@ -84,6 +60,8 @@ class Jobs extends Component
             'jobs'      => $jobs,
             'pins'      => $pins,
             'remaining' => $agent->remainingCapacityKg(),
+            'capacity' => $agent->capacityState(),
+            'lastHourKg' => $agent->collectedLastHourKg(),
             'posAge'    => $this->positionAgeMinutes(),
         ])->layoutData([
             'app' => 'agent', 'page' => 'jobs',

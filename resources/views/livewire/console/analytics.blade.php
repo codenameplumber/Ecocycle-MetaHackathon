@@ -6,7 +6,7 @@
         </div>
         <div class="row g-10 no-print">
             <span class="badge {{ $aiEnabled ? 'badge-violet' : 'badge-amber' }}">
-                {{ $aiEnabled ? 'OpenAI connected' : 'No API key — local answers' }}
+                {{ $aiEnabled ? 'AI connected' : 'Local insights — no API key' }}
             </span>
         </div>
     </div>
@@ -50,7 +50,7 @@
                     <p style="color:var(--text);line-height:1.6">{{ $answer['answer'] }}</p>
                     @unless ($answer['generated'])
                         <p class="tiny dim mt-8">
-                            No OpenAI key is configured, so this was assembled locally from the same figures.
+                            No AI key is configured, so this was assembled locally from the same figures.
                             Add <span class="mono">OPENAI_API_KEY</span> to <span class="mono">.env</span> for
                             full natural-language answers.
                         </p>
@@ -116,6 +116,53 @@
                         Not enough arrivals on record yet to find a daily pattern.
                     @endif
                 </p>
+            </div>
+        </div>
+    </section>
+
+    {{-- Behaviour forecast: what areas and streams will do next --}}
+    <section class="grid mb-16" style="grid-template-columns:1.5fr 1fr;gap:16px;align-items:start">
+        <div class="card">
+            <div class="card-head"><h3>Tomorrow by area</h3><span class="badge badge-violet">behaviour forecast</span></div>
+            <div class="card-body">
+                <div class="ai-card mb-12">
+                    <span class="ai-tag"><i data-icon="sparkles" class="i i-sm"></i> Morning briefing</span>
+                    <p class="small mt-8" style="color:var(--text);line-height:1.6">{{ $briefing }}</p>
+                </div>
+                @forelse ($tomorrowByArea as $row)
+                    <div class="area-row">
+                        <span>
+                            <span class="small strong">{{ $row['area'] }}</span>
+                            <span class="tiny dim"> · {{ $row['households'] }} households</span>
+                            <div class="meter mt-6"><span style="width:{{ min(100, $row['share'] * 3) }}%"></span></div>
+                        </span>
+                        <span class="right">
+                            <div class="strong figure-num">{{ number_format($row['kg'], 0) }} kg</div>
+                            <div class="tiny dim">≈ {{ number_format($row['batches'], 1) }} pickups · {{ $row['confidence'] }}% conf.</div>
+                            @if ($row['top_stream'])<span class="stream-chip mt-6">{{ $row['top_stream'] }}</span>@endif
+                        </span>
+                    </div>
+                @empty
+                    <p class="small muted">Not enough verified history yet.</p>
+                @endforelse
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-head"><h3>Next 7 days by stream</h3><span class="badge">expected mix</span></div>
+            <div class="card-body col g-10">
+                @forelse ($weekByCategory as $s)
+                    <div>
+                        <div class="between mb-4">
+                            <span class="row g-8 small"><span style="width:9px;height:9px;border-radius:2px;background:{{ $s['color'] }}"></span>{{ $s['label'] }}</span>
+                            <span class="tiny dim figure-num">{{ number_format($s['kg'], 0) }} kg · {{ number_format($s['share'], 1) }}%</span>
+                        </div>
+                        <div class="bar"><span style="width:{{ $s['share'] }}%;background:{{ $s['color'] }}"></span></div>
+                    </div>
+                @empty
+                    <p class="small muted">Nothing verified yet.</p>
+                @endforelse
+                <p class="tiny dim mt-8">Computed from verified history and the weekday forecast. The model phrases briefings; it never invents these figures.</p>
             </div>
         </div>
     </section>

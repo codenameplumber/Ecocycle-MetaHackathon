@@ -79,6 +79,11 @@ class BatchStateMachine
      */
     public function claim(WasteBatch $batch, \App\Models\Agent $agent): bool
     {
+        // Capacity is a hard gate, not a ranking hint: a vehicle that is
+        // already committed cannot promise this load a place on board.
+        if (! $agent->canAccept((float) ($batch->expected_kg ?? 0))) {
+            return false;
+        }
         $claimed = WasteBatch::whereKey($batch->id)
             ->where('status', BatchStatus::Available->value)
             ->whereNull('agent_id')

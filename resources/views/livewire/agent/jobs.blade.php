@@ -28,6 +28,25 @@
         </div>
     </section>
 
+    <section class="capacity-banner {{ $capacity['level'] }}">
+        <div class="between">
+            <span class="row g-8"><i data-icon="truck" class="i i-sm"></i><strong>Vehicle capacity</strong></span>
+            <span class="badge {{ $capacity['level'] === 'full' ? 'badge-red' : ($capacity['level'] === 'warn' ? 'badge-amber' : 'badge-green') }}">{{ $capacity['pct'] }}% committed</span>
+        </div>
+        <div class="meter {{ $capacity['level'] }} mt-10"><span style="width:{{ $capacity['pct'] }}%"></span></div>
+        <div class="between tiny dim mt-8">
+            <span>{{ number_format($capacity['committed'], 1) }} kg committed · {{ number_format($lastHourKg, 1) }} kg collected in the last hour</span>
+            <span class="figure-num">{{ number_format($remaining, 1) }} kg left</span>
+        </div>
+        @if ($capacity['level'] === 'full')
+            <div class="callout callout-warn mt-10"><i data-icon="alert" class="i i-sm"></i><div><strong>Vehicle full.</strong> New jobs are locked — head to the facility to deliver.</div></div>
+            <a class="btn btn-primary btn-block mt-10" href="{{ route('agent.route') }}" wire:navigate>Head to facility</a>
+        @elseif ($capacity['level'] === 'warn')
+            <p class="tiny dim mt-8">Nearly full — only small jobs will still fit.</p>
+        @endif
+    </section>
+
+    @if (false)
     <div class="callout callout-info">
         <i data-icon="scale" class="i i-sm"></i>
         <div>
@@ -35,6 +54,8 @@
             Jobs above that are dimmed — deliver your current load first.
         </div>
     </div>
+
+    @endif
 
     @if (count($pins) > 1)
         <section class="card card-flat" style="overflow:hidden">
@@ -105,6 +126,8 @@
                     </div>
                     <dl>
                         <div class="kv"><dt>Estimated weight</dt><dd class="figure-num">{{ number_format($c->expected_kg ?? 0, 1) }} kg</dd></div>
+                        <div class="kv"><dt>Household evidence</dt><dd>{{ $c->photo_path ? 'Photo snapped ✓' : 'No photo' }}@if ($c->classification) · {{ $c->classification['confidence'] ?? 0 }}% read @endif</dd></div>
+                        <div class="kv"><dt>Fits your vehicle</dt><dd>{{ ($c->expected_kg ?? 0) <= $remaining ? 'Yes — ' . number_format($remaining - ($c->expected_kg ?? 0), 1) . ' kg to spare' : 'No — over capacity' }}</dd></div>
                         <div class="kv"><dt>Category</dt><dd>{{ $c->category?->label }}</dd></div>
                         <div class="kv"><dt>Window</dt>
                             <dd>{{ $c->window_end ? $c->window_end->format('D, g A') : 'Flexible' }}</dd></div>
@@ -123,7 +146,7 @@
                 </div>
                 <div class="card-foot row" style="justify-content:flex-end">
                     <button class="btn btn-ghost" wire:click="dismiss">Not now</button>
-                    <button class="btn btn-primary" wire:click="accept({{ $c->id }})">
+                    <button class="btn btn-primary" wire:click="accept({{ $c->id }})" @disabled(($c->expected_kg ?? 0) > $remaining)>
                         <span wire:loading.remove wire:target="accept">Accept the job</span>
                         <span wire:loading wire:target="accept">Claiming…</span>
                     </button>
