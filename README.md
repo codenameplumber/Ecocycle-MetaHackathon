@@ -10,6 +10,94 @@ underneath. Every figure on every screen is a query; nothing is illustrated.
 
 ---
 
+## For the judge — the short version
+
+### What this project is
+
+**EcoCycle is a verified receipt for Lagos's waste economy.**
+
+Lagos generates roughly 13,000 tonnes of waste a day, and the recoverable part
+is already moving: households separate it, informal collectors carry it, and
+processors buy it. What nobody has is a shared, checkable record of what moved,
+what it actually weighed, and who is owed for it.
+
+- The **household** is told a weight it cannot verify, at a rate it cannot check.
+- The **collector** is paid on a figure declared at a gate, with no way to prove
+  an honest track record.
+- The **processor** buys loads of unknown origin and absorbs contamination it
+  cannot trace back.
+
+EcoCycle is the working platform that closes that gap. One batch record is read
+identically by a household on a phone (`/app`), a collector on a round
+(`/agent`), an inspector at a facility bench (`/console`), and anyone scanning
+the QR tag on a bag (`/b/{code}`). This is not a mockup: every figure on every
+screen is a live database query, money settles through a real append-only
+ledger, and every state change is audited.
+
+### What I built
+
+- **Three surfaces, one record** — household, agent, and facility apps over a
+  single MySQL system of record (Laravel 13 · Livewire 4).
+- **Three weights, kept apart** — `expected_kg` (household estimate),
+  `collected_kg` (agent declaration), `verified_kg` (facility scale). The gap
+  between them is the fraud signal, so they are never collapsed into one number.
+- **Money that can defend itself** — settlement runs only on `verified_kg`,
+  from a server-side rate table, split 60/40 household/agent into an
+  append-only, idempotent ledger. Double-settling is a no-op; two agents racing
+  for one job are decided by the database, not the browser.
+- **A guarded lifecycle** — every batch moves through a state machine
+  (requested → available → accepted → collected → in transit → received →
+  inspecting → verified → processing → processed) with a timestamped audit
+  event at each step, plus integrity detectors that flag weight variance and
+  GPS drift per agent.
+- **Pilot-scale seeded data** — ~160 households, ~38 agents, and months of
+  settled history, so every chart, queue, and balance is exercised by real rows.
+
+### What Meta Muse did
+
+Meta Muse (Muse Code, muse-wonder-1.0) worked as an engineering partner on
+this existing codebase — it studied the whole platform first, then built:
+
+1. **Photo-first requests** — households snap their waste and count bags
+   instead of guessing a weight. An estimator (bags × stream density, optional
+   photo reading, the household's own verified history) returns a *range with
+   a confidence label*, never fake precision.
+2. **A vehicle that cannot overfill** — a live capacity meter and a hard lock
+   in the claim path itself, so a full vehicle cannot accept another job. Job
+   cards carry the household photo and estimate confidence.
+3. **A facility forecast** — tomorrow's expected intake by area and waste
+   stream, with confidence, and a morning briefing managers can staff against.
+4. **Production fixes, test-first** — for example, Muse traced a live
+   `MethodNotFoundException` to a shared job-card partial calling `accept` on a
+   component that did not define it, extracted the claim logic into a shared
+   trait used by both agent screens, and added a regression test that
+   reproduced the exact exception before the fix. It also backfilled two weeks
+   of verified, settled batches when the recent demo history proved empty.
+
+One rule Muse never touched: **estimates never pay anyone.** Payment still
+follows only the facility's verified scale weight.
+
+Full pitch deck: [EcoCycle-Meta-Muse-Improvements.pdf](docs/EcoCycle-Meta-Muse-Improvements.pdf) ·
+original submission: [EcoCycle-Submission.pdf](docs/EcoCycle-Submission.pdf)
+
+### See it in six minutes
+
+Sign in (password is `password` everywhere), then follow one batch:
+
+1. **Facility admin** — `manager@ecocycle.ng` → `/console` (demo from here).
+2. **Household** — `chidi.okonkwo@ecocycle.test` → request a pickup in `/app`.
+3. **Agent** — `sunday.amadi@ecocycle.test` → accept and collect it in `/agent`.
+4. **Back at the facility** — weigh it below the declared weight; watch the
+   settlement preview recompute and an integrity flag open on the variance.
+5. **Back as the household** — the 60% credit has landed; withdraw it, then open
+   the public trace at `/b/{code}`.
+
+**Proof it works:** `php artisan test` — 88 feature tests pass, including a
+journey test that walks one batch from request to settled payout for both
+sides.
+
+---
+
 ## Run it
 
 ```bash
@@ -104,7 +192,7 @@ Four layers, because each catches what the others cannot.
 php artisan ecocycle:test     # 67 domain invariants, driven end to end
 php artisan ecocycle:audit    # 20 invariants across every row already stored
 php artisan ecocycle:pages    # renders all 32 pages, flags thin or broken ones
-php artisan test              # 64 feature tests: auth, routes, gates, lifecycle
+php artisan test              # 88 feature tests: auth, routes, gates, lifecycle, seeders
 ```
 
 `ecocycle:test` moves a real batch through inspection, settles it, tries to
@@ -142,7 +230,9 @@ app/
 │   ├── IntegrityService    four detectors, variance flags, agent scoring
 │   ├── InsightService      the standing insight cards, computed in SQL
 │   ├── ForecastService     weekday-mean prediction, and its measured error
-│   ├── ClaudeService       analytics phrasing + photo classification
+│   ├── OpenAiService       analytics phrasing + photo classification (optional)
+│   ├── LoadEstimatorService  photo/bag-count weight estimate with confidence
+│   ├── BehaviourForecastService  tomorrow's intake by area and stream
 │   └── QrService           real QR codes as inline SVG
 ├── Livewire/
 │   ├── Auth/         Login, Register (4 steps, real geolocation), ForgotPassword
@@ -171,13 +261,16 @@ actually reports.
 
 ---
 
-## Claude
+## AI features (OpenAI, optional)
 
+These are the app's *runtime* AI features — distinct from Meta Muse, the
+engineering partner that built the platform (see "What Meta Muse did" above).
 Add a key to `.env`:
 
 ```
-ANTHROPIC_API_KEY=sk-ant-...
-ANTHROPIC_MODEL=claude-opus-5
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-4o-mini
+OPENAI_VISION_MODEL=gpt-4o-mini
 ```
 
 Two features use it, and **both work without it**:
